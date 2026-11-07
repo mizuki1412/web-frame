@@ -1,8 +1,8 @@
 # web-frame — 通用前端框架层 Agent Guide
 
-web-frame 是自包含的通用前端框架层（Vue 3 + Vite + antdv-next），以**独立 git 仓库**发布、作为 **npm 本地包**（`file:../web-frame` 软链）引入各项目：顶层目录是**后端中立的核心层**，`backend/<name>/` 是**后端适配器层**。新项目按「新项目引导」引入即可得到标准前端工程；对接新后端时新增一个适配器目录，不改核心层。webkit-sample 是官方示例与测试项目。
+web-frame 是自包含的通用前端框架层（Vue 3 + Vite + antdv-next），以**独立 git 仓库**发布、以**内部嵌套独立仓库**方式引入各项目：把本仓库 clone 到项目根目录下的 `web-frame/`，父仓库 `.gitignore` 掉它——对 vite/IDE 而言它就是项目内部目录（**vite 零特殊配置**），对 git 而言它是独立仓库（各自提交推送）。顶层目录是**后端中立的核心层**，`backend/<name>/` 是**后端适配器层**。新项目按「新项目引导」引入即可得到标准前端工程；对接新后端时新增一个适配器目录，不改核心层。webkit-sample 是官方示例与测试项目。
 
-**分发模型**：框架仓库克隆在项目同级目录（约定 `D:\codes\web\web-frame`，与各项目平级），项目 package.json 写 `"web-frame": "file:../web-frame"`（npm 对目录依赖做软链，改框架源码即时生效）；vite 以 `resolve.alias` 指向框架真实路径并 `optimizeDeps.include` 框架运行时依赖（见「新项目引导」——三项配置缺一不可，否则预打包实例分裂）。升级框架 = 框架仓库里 `git pull`，本地所有引用它的项目即时生效。
+**分发模型**：每个项目内嵌一份 web-frame clone（项目根下 `/web-frame/`，父仓库 .gitignore）。升级框架 = 在项目内的 `web-frame/` 里 `git pull`（逐项目执行）。改框架 = 直接在任一项目内的 `web-frame/` 里改（它就是独立仓库），commit 后 `git push` 到 gitee，其他项目 `git pull` 同步。**业务项目不要改框架**——业务定制以适配器（`backend/<name>/`）或上层封装实现。
 
 ## 分层与依赖规则（最重要）
 
@@ -90,39 +90,34 @@ export const myBackend = {
 - 报文加密：后端挂载 `middleware.DecryptRequest/EncryptResponse` 的项目在启动时调 `payloadCryptoEnable({exclude: []})`（自 `"/web-frame/backend/go-frame"` 引入），它会向 `RequestConfig.payloadCodec` 注入 go-frame 信封协议（X-Enc-Key / X-Enc-Payload）；上传/下载自动跳过，服务端重启换钥自动重试一次。crypto-js/jsencrypt 动态 import 不进主包；协议互操作向量见 `backend/go-frame/payload-crypto.test.js`。
 - 文件链路 `/common/upload`、`/common/download[/private]`、`/common/file/list|del`（`backend/go-frame/api-common.js`），私有下载靠 cookie。
 
-## 新项目引导（npm 本地包引入 web-frame）
+## 新项目引导（内部嵌套独立仓库）
 
 > 引入模型已于 2026-11-07 在 webkit-sample 实测：`npm i → build → dev boot → 布局/样式/守卫/echarts 全渲染` 全通过。
 
-1. 脚手架：`npm create vite@latest my-app -- --template vue`，删除模板 src；**把 web-frame 仓库克隆到项目同级目录**（与项目平级，如 `D:\codes\web\web-frame`）：
+1. 脚手架：`npm create vite@latest my-app -- --template vue`，删除模板 src；**把 web-frame 仓库克隆到项目根目录内部**：
 
 ```bash
-cd <项目同级目录>
-git clone git@gitee.com:yingchaojie/web-frame.git
+cd my-app
+git clone git@gitee.com:yingchaojie/web-frame.git web-frame
 ```
 
-2. 项目 `package.json` 增加本地依赖：`"web-frame": "file:../web-frame"`（npm 对目录依赖做软链，改框架源码即时生效，无需重装）。**注意 `file:` 的相对路径以项目目录为基准——项目必须与 web-frame 仓库同级存放**。
-3. `vite.config.mjs` **必须**配 `resolve.alias` 把 `web-frame` 指到同级真实路径 + `optimizeDeps.include` 框架运行时依赖 + `server.fs.allow`（模板见步骤 6）。原因：裸包名若走 node_modules 解析，vite 会把 web-frame 做 optimizeDeps 预打包——esbuild 编译不了 `.vue` 组件，预打包闭包与源码管道各持一份 store/reactive 模块实例，症状为布局组件读 `storeCurrentRoute.meta` 报 undefined；alias 后框架整体进源码管道（单实例、HMR 生效），其 bare import 从框架仓库解析并经 include 预打包成共享 chunk（vue 等有状态依赖保持全局单实例）。
-4. 依赖（`npm i --force`，peer dep 冲突）。**最小可运行集（实测）**：
+2. 父仓库 `.gitignore` 加一行 `/web-frame/`（框架是独立 git 仓库，不入父仓库；对 vite/IDE 它就是普通内部目录）。项目 `package.json` **无需**声明 web-frame 依赖。
+3. 依赖（`npm i --force`，peer dep 冲突）。**最小可运行集（实测）**：
    - dependencies：`vue vue-router axios qs dayjs nprogress @vueuse/core antdv-next @antdv-next/icons @antdv-next/tailwind tailwindcss @tailwindcss/vite crypto-js jsencrypt`
    - devDependencies：`vite @vitejs/plugin-vue unplugin-vue-components @antdv-next/auto-import-resolver vite-plugin-svg-icons fast-glob`
    - 两个非显然项：**crypto-js/jsencrypt 必装**——虽只在开启报文加密后运行时使用，但适配器的动态 import 在构建期被静态解析，不装 build 直接失败；**fast-glob 必装**——`vite-plugin-svg-icons` 未声明它的传递依赖。
    - 按需追加：`vant @vant/auto-import-resolver`（移动端）、`echarts vue-echarts`（图表）、`tinymce @tinymce/tinymce-vue`（富文本）、`@form-create/antdv-next`（动态表单）、`@simonwep/pickr`（取色器）、`dhtmlx-gantt`（甘特图）、`vue-pdf-embed`（PDF）、`oxlint vitest jsdom`（质量工具，配置见 webkit-sample）。
-   - **镜像纪律**：框架仓库（web-frame/）已把这些运行时依赖装为 devDeps（供 vite 扫描器解析与框架自测）。**给框架新增第三方依赖时，必须同时在框架仓库安装**，否则宿主构建扫描报 could not be resolved。
-5. 同步创建 `index.html`（`<div id="app">` + `<script type="module" src="/src/main.js">`）与 `src/App.vue`（`<router-view/>` 壳，中文 locale 可加 `a-config-provider`）；**`src/assets/icons/` 目录必须存在**（svg 插件扫描，可先放一个占位 svg）。
-6. `vite.config.mjs` 模板（**alias + optimizeDeps.include + fs.allow 三者缺一不可**，原因见步骤 3）：
+   - 框架是源码形态（嵌套在项目内），其 bare import 从宿主 node_modules 解析并正常预打包——**无需任何 exclude/include 特殊处理**。
+4. 同步创建 `index.html`（`<div id="app">` + `<script type="module" src="/src/main.js">`）与 `src/App.vue`（`<router-view/>` 壳，中文 locale 可加 `a-config-provider`）；**`src/assets/icons/` 目录必须存在**（svg 插件扫描，可先放一个占位 svg）。
+5. `vite.config.mjs` 模板（**零框架特殊配置**，与普通 vite 项目无异）：
 
 ```js
-import {fileURLToPath} from 'node:url'
 import {defineConfig} from 'vite'
 import vue from '@vitejs/plugin-vue'
-import {getEnv} from "web-frame/plugin/vite-helper"
+import {getEnv} from "./web-frame/plugin/vite-helper"
 import tailwindcss from '@tailwindcss/vite'
-import {viteAddIcon} from "web-frame/plugin/vite-add-icon"
-import {viteAddAntD} from "web-frame/plugin/vite-add-antd.js"
-
-// 框架真实路径（项目与框架仓库同级）
-const webFrameDir = fileURLToPath(new URL('../web-frame', import.meta.url))
+import {viteAddIcon} from "./web-frame/plugin/vite-add-icon"
+import {viteAddAntD} from "./web-frame/plugin/vite-add-antd.js"
 
 const plugins = [vue(), tailwindcss()]
 viteAddIcon(plugins)   // svg 图标目录 src/assets/icons
@@ -130,17 +125,7 @@ viteAddAntD(plugins)   // antdv 按需自动引入
 
 export default defineConfig({
   base: getEnv('VITE_ASSETS_BASE_URL'),
-  resolve: {
-    alias: {"web-frame": webFrameDir},   // 框架进源码管道，杜绝预打包实例分裂
-  },
-  optimizeDeps: {
-    // 框架的 bare import 重写到这些 chunk：单实例 + CJS（dayjs 等）互操作
-    include: ["vue", "vue-router", "antdv-next", "@antdv-next/icons", "@vueuse/core",
-      "axios", "qs", "dayjs", "nprogress",
-      "echarts/core", "echarts/charts", "echarts/components", "echarts/renderers", "vue-echarts"],
-  },
   server: {
-    fs: {allow: ['..']},   // alias 后框架文件在项目根外，dev server 需放行同级目录
     proxy: {"/api": {target: getEnv('VITE_PROXY_TARGET') || "http://127.0.0.1:10000",
       changeOrigin: true, rewrite: (path) => path.replace(/^\/api/, "")}},
   },
@@ -148,26 +133,27 @@ export default defineConfig({
 })
 ```
 
-> 按需追加的重库（tinymce/dhtmlx-gantt/fabric/@simonwep/pickr 等）经页面懒加载自动进预打包；若控制台出现 `does not provide an export named 'default'`（CJS 包走了原始加载），把它加进 include 即可。
+> 引 `web-frame/tailwind.css` 的入口在 `web-frame/index.js` 内，其 `@source "./"` 会把框架目录显式登记为 tailwind class 候选（框架目录被父仓库 .gitignore，tailwind v4 自动检测会跳过它，此登记不可删）。
 
-7. `src/main.js`（模板见 webkit-sample `src/main.js`）：`createApp` → `setupWebkit(app, {env, backend, routes})` → `app.mount("#app")`。
+6. `src/main.js`（模板见 webkit-sample `src/main.js`）：`createApp` → `setupWebkit(app, {env, backend, routes})` → `app.mount("#app")`。
+7. `jsconfig.json` 配 `"paths": {"/web-frame/*": ["web-frame/*"]}`（IDE 跳转；Vite/vitest 原生支持 `/web-frame` 根绝对路径，vitest 已在配置中 alias）。
 8. `.env` 最小集：`VITE_APP_NAME`（token 的 localStorage key 前缀）、`VITE_REQUEST_BASE_URL`（如 `/api`）、`VITE_ROUTE_MODE`（history/hash）、`VITE_TITLE`、`VITE_ASSETS_BASE_URL`；可选 `VITE_ROUTE_BASE_URL`、`VITE_TITLE_SIMPLE`、`VITE_TITLE_APP`、`VITE_OSS_PREFIX`、`VITE_WEB_TINYMCE_KEY`、`VITE_SCHEMA`。全表见 webkit-sample 根目录 `.env`。
-9. src 目录约定：`src/router/index.js`（路由表，布局组件取 `web-frame/components-layout/*`；**`authDisable` 只写在叶子页面上**，勿挂父路由）、`src/api/`（业务接口，`import {request} from "web-frame/request"`）、`src/views/`（页面）、`src/views-app/`（移动端）、`src/assets/icons/`（svg）。
+9. src 目录约定：`src/router/index.js`（路由表，布局组件取 `/web-frame/components-layout/*`；**`authDisable` 只写在叶子页面上**，勿挂父路由）、`src/api/`（业务接口，`import {request} from "/web-frame/request"`）、`src/views/`（页面）、`src/views-app/`（移动端）、`src/assets/icons/`（svg）。
 
 ## 老项目升级（web-frame 更新后）
 
 ```bash
-cd ../web-frame     # 框架仓库（同级目录）
-git pull            # 就这一步；本地所有引用它的项目即时生效（软链）
+cd web-frame     # 项目内的框架仓库
+git pull         # 就这一步；刷新页面即生效
 ```
 
 - 升级后跑项目里 `npm run build && npm run test` 验证。
-- **业务项目不要改框架**——业务定制以适配器（`backend/<name>/`）或上层封装实现；确需改框架时，直接在框架仓库改、提交、`git push`（它就是独立仓库，无任何转发仪式）。
-- 框架仓库自带单测：`cd ../web-frame && npm i && npm test`（分页解析/权限镜像/加密协议互操作向量）。
+- **业务项目不要改框架**——业务定制以适配器（`backend/<name>/`）或上层封装实现；确需改框架时，直接在项目内的 `web-frame/` 里改（它就是独立仓库）、提交、`git push`，其他项目 `git pull` 同步。
+- 框架仓库自带单测：`cd web-frame && npm i && npm test`（分页解析/权限镜像/加密协议互操作向量）。
 
 ## 开发约定
 
-- **import 规范**：src → web-frame 一律裸包名 `web-frame/...`（经 node_modules 软链解析）；web-frame 内部一律相对路径（保证独立成仓自洽）。旧仓库形态下的 `/web-frame/...` 根绝对路径已废弃。
+- **import 规范**：src → web-frame 一律 `/web-frame/...` 根绝对路径（Vite/vitest 原生支持）；web-frame 内部一律相对路径（独立成仓自洽）。npm 包形态下的裸包名 `web-frame/...` 已废弃。
 - **Bundle 纪律**：重库（tinymce/dhtmlx-gantt/echarts/form-create）禁止全局注册，只在用到的页面局部 import（如 `import {ECharts as VChart} from "web-frame/plugin/echarts"`）；antdv 组件靠 unplugin 自动按需，不要 `app.use(antd)`。首屏体积以 **dist/index.html 的 script + modulepreload 的 eager chunk 合计**为准——单看 index chunk 会被 chunk 重分布误导（antdv 内部模块在共享 chunk 间流动）。
 - 组件成对模式：每个 Kit 组件一个 `.vue` + 同名 `.js`（install 插件）；轻量组件可进 `components` 默认注册集，重组件不可。
 - barrel 纪律：`utils/index.js`、`store/index.js` 只收轻量通用件；重库/平台专属（echarts-helper、loading-app(Vant)、confirm）走深路径引入，避免 barrel 拖包。
