@@ -9,6 +9,10 @@
 /* antdv-next token 映射为 tailwind 工具类（命名空间安全，避免覆盖原生 utility） */
 @import "@antdv-next/tailwind/compat.css";
 @import 'antdv-next/dist/reset.css';
+/* web-frame 作为 npm 包（软链进宿主 node_modules）时，tailwind v4 默认
+   不扫描 node_modules——显式把本包目录登记为 class 候选来源。
+   相对路径以本文件所在目录为基准，包内包外两种形态均正确。 */
+@source "./";
 
 @layer utilities {
     /* 隐藏滚动条 Chrome, Safari and Opera */
